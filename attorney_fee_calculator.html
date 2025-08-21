@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0b1220" />
+<title>소가기준 변호사보수 계산기</title>
+<style>
+  :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#22d3ee; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:linear-gradient(120deg,#0b1220,#0e1726);color:var(--text);}
+  .wrap{max-width:880px;margin:48px auto;padding:0 20px}
+  .card{background:rgba(17,24,39,0.65);backdrop-filter: blur(10px);border:1px solid rgba(255,255,255,0.06);border-radius:20px;padding:28px;box-shadow:0 10px 40px rgba(0,0,0,0.35);overflow:hidden}
+  h1{font-size:26px;margin:0 0 14px}
+  p.desc{color:var(--muted);margin-top:0;font-size:14px;line-height:1.6}
+  .grid{display:grid;grid-template-columns:1fr;gap:14px;margin-top:12px;min-width:0}
+.grid > *{min-width:0}
+  @media(min-width:760px){ .grid{grid-template-columns:1.05fr 1fr} }
+  label{display:block;font-weight:600;margin-bottom:6px}
+  .input{display:flex;align-items:center;background:#0b1020;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;font-size:18px;letter-spacing:.2px}
+  .input input{all:unset;color:#fff;flex:1;text-align:right}
+  .muted{color:var(--muted);font-size:12px}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .btn{background:var(--accent);color:#00222a;font-weight:800;border:none;border-radius:14px;padding:14px 18px;cursor:pointer;transition:transform .05s ease}
+  .btn:active{transform:scale(.98)}
+  .out{margin-top:18px;padding:16px;border:1px dashed rgba(255,255,255,0.12);border-radius:14px;background:rgba(34,211,238,0.06)}
+  .out h2{margin:0 0 6px;font-size:18px}
+  .mono{font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+  .tableWrap{margin-top:22px;overflow-x:auto}
+  table.table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;min-width:640px;table-layout:fixed}
+  .table th,.table td{border:1px solid rgba(255,255,255,0.12);padding:10px 12px;text-align:right;white-space:nowrap}
+  .table th{background:rgba(255,255,255,0.05);text-align:center;position:sticky;top:0}
+  .table td.formula{text-align:left}
+  .foot{margin-top:14px;color:var(--muted);font-size:12px;line-height:1.5}
+  #err.bad{color:#fca5a5}
+  @media(max-width:480px){
+    .wrap{margin:16px auto;padding:0 12px}
+    .input{padding:16px 14px;font-size:20px}
+    .row{position:sticky;bottom:12px;background:rgba(2,6,23,0.85);backdrop-filter:blur(6px);padding:10px;border-radius:14px;z-index:10}
+    .btn{flex:1}
+    h1{font-size:22px}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>소가기준 변호사보수 계산기</h1>
+      <p class="desc">소송목적(소가)을 입력하면 「변호사보수의 소송비용 산입에 관한 규칙」 [별표]에 따른 보수 산입액을 계산합니다. 결과는 원 단위로 산출합니다.</p>
+
+      <div class="grid">
+        <div>
+          <label for="amount">소송목적의 값(소가)</label>
+          <div class="input">
+            <span class="muted">₩</span>
+            <input id="amount" type="tel" inputmode="numeric" autocomplete="off" placeholder="예: 120,000,000" />
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn" id="calcBtn">계산하기</button>
+            <button class="btn" style="background:#a5b4fc;color:#0b1020" id="pdfBtn">PDF로 저장</button>
+<button class="btn" id="installBtn" style="background:#10b981;color:#062;display:none">앱 설치</button>
+            <span id="err" class="bad"></span>
+          </div>
+        </div>
+        <div>
+          <div class="out">
+            <h2>계산 결과</h2>
+            <div class="mono" id="resultMain">-</div>
+            <div class="muted" id="resultSub"></div>
+          </div>
+          <div class="tableWrap">
+            <table class="table" id="breakdownTbl" style="display:none">
+              <thead>
+                <tr><th>구간</th><th>계산식</th><th>금액(원)</th></tr>
+              </thead>
+              <tbody id="breakdown"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">
+        기준: 2020. 12. 28. 개정 [별표]. 계산은 규칙상 누진구간 공식을 그대로 적용합니다(원 단위 반올림). 직권·법원 재량 등 사건별 특수 사정은 반영하지 않습니다.
+      </div>
+    </div>
+  </div>
+
+<script>
+function parseNumber(str){
+  if(!str) return NaN;
+  return Number(String(str).replace(/[^\d]/g,''));
+}
+function formatKRW(n){
+  try{ return n.toLocaleString('ko-KR'); }catch(e){ return String(Math.round(n)); }
+}
+const amtEl = document.getElementById('amount');
+// 입력 시 천 단위 쉼표 + 300ms 디바운스 자동 계산
+let _calcTimer;
+amtEl.addEventListener('input', (e)=>{
+  const raw = e.target.value.replace(/,/g, '');
+  const num = parseInt(raw, 10);
+  if (isNaN(num)) { e.target.value = ''; return; }
+  e.target.value = num.toLocaleString('ko-KR');
+  clearTimeout(_calcTimer);
+  _calcTimer = setTimeout(()=>calc(), 300);
+});
+amtEl.addEventListener('focus', (e)=>{ e.target.select(); });
+amtEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); calc(); }}); calc(); }}); });
+
+function calcCore(A){
+  let fee = 0, label='', formula='';
+  if (A <= 3_000_000){
+    fee = 300_000;
+    label="~ 3,000,000원"; formula="정액 300,000";
+  } else if (A <= 20_000_000){
+    fee = 300_000 + (A - 3_000_000) * 0.10;
+    label="3,000,000 초과 ~ 20,000,000"; formula="300,000 + (A-3,000,000)×10%";
+  } else if (A <= 50_000_000){
+    fee = 2_000_000 + (A - 20_000_000) * 0.08;
+    label="20,000,000 초과 ~ 50,000,000"; formula="2,000,000 + (A-20,000,000)×8%";
+  } else if (A <= 100_000_000){
+    fee = 4_400_000 + (A - 50_000_000) * 0.06;
+    label="50,000,000 초과 ~ 100,000,000"; formula="4,400,000 + (A-50,000,000)×6%";
+  } else if (A <= 150_000_000){
+    fee = 7_400_000 + (A - 100_000_000) * 0.04;
+    label="100,000,000 초과 ~ 150,000,000"; formula="7,400,000 + (A-100,000,000)×4%";
+  } else if (A <= 200_000_000){
+    fee = 9_400_000 + (A - 150_000_000) * 0.02;
+    label="150,000,000 초과 ~ 200,000,000"; formula="9,400,000 + (A-150,000,000)×2%";
+  } else if (A <= 500_000_000){
+    fee = 10_400_000 + (A - 200_000_000) * 0.01;
+    label="200,000,000 초과 ~ 500,000,000"; formula="10,400,000 + (A-200,000,000)×1%";
+  } else {
+    fee = 13_400_000 + (A - 500_000_000) * 0.005;
+    label="500,000,000 초과"; formula="13,400,000 + (A-500,000,000)×0.5%";
+  }
+  return {fee:Math.round(fee), label, formula};
+}
+
+function calc(){
+  const amtRaw = amtEl.value;
+  const A = parseNumber(amtRaw);
+  const err = document.getElementById('err');
+  err.textContent = '';
+  if(!(A>=0)){ err.textContent='숫자를 입력해 주세요.'; return; }
+
+  const r = calcCore(A);
+
+  document.getElementById('resultMain').textContent = "보수 산입액: ₩ " + formatKRW(r.fee);
+  document.getElementById('resultSub').textContent = "[계산기준 금액: ₩ " + formatKRW(r.fee) + "]  |  소가 A = ₩ " + formatKRW(A) + "  |  적용구간: " + r.label;
+
+  const tbody = document.getElementById('breakdown');
+  tbody.innerHTML = '';
+  const tr = document.createElement('tr');
+  const td1 = document.createElement('td'); td1.textContent = r.label; td1.style.textAlign='center';
+  const td2 = document.createElement('td'); td2.textContent = r.formula; td2.className='formula';
+  const td3 = document.createElement('td'); td3.textContent = "₩ " + formatKRW(r.fee);
+  tr.append(td1, td2, td3);
+  tbody.appendChild(tr);
+  document.getElementById('breakdownTbl').style.display = 'table';
+}
+
+function savePDF(){
+  const A = parseNumber(amtEl.value);
+  if(!(A>=0)){ document.getElementById('err').textContent='먼저 소가를 계산하세요.'; return; }
+  const r = calcCore(A);
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth()+1).padStart(2,'0');
+  const d = String(today.getDate()).padStart(2,'0');
+
+  const html = `
+  <!DOCTYPE html>
+  <html lang="ko"><head><meta charset="utf-8">
+  <title>변호사보수 계산 결과</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:28px;color:#111}
+    h1{font-size:20px;margin:0 0 10px}
+    .muted{color:#555;font-size:12px}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace}
+    table{border-collapse:collapse;margin-top:12px;width:100%;font-size:13px}
+    th,td{border:1px solid #ccc;padding:8px 10px;white-space:nowrap}
+    th{text-align:center;background:#f4f4f4}
+    td{text-align:right}
+    td:first-child, td:nth-child(2){text-align:left}
+    .foot{margin-top:14px;font-size:12px;color:#444;line-height:1.5}
+  </style>
+  </head><body>
+    <h1>변호사보수 계산 결과</h1>
+    <div class="muted">산출일자: ${y}. ${m}. ${d}.  / 기준규정: 「변호사보수의 소송비용 산입에 관한 규칙」 [별표] (2020. 12. 28. 개정)</div>
+    <p class="mono">소가 A = ₩ ${A.toLocaleString('ko-KR')}</p>
+    <p class="mono"><strong>보수 산입액 = ₩ ${r.fee.toLocaleString('ko-KR')}</strong></p>
+    <table>
+      <thead><tr><th>적용 구간</th><th>계산식</th><th>금액(원)</th></tr></thead>
+      <tbody><tr><td>${r.label}</td><td>${r.formula}</td><td>₩ ${r.fee.toLocaleString('ko-KR')}</td></tr></tbody>
+    </table>
+    <div class="foot">
+      주: 본 계산은 [별표]의 누진구간 공식을 그대로 적용한 결과이며, 법원이 사건별로 인정하는 보수액 산입은 재량에 따라 달라질 수 있습니다.
+    </div>
+    <script>window.onload=()=>{window.print()};<\/script>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+document.getElementById('calcBtn').addEventListener('click', calc);
+document.getElementById('pdfBtn').addEventListener('click', savePDF);
+
+// ---- PWA: manifest + service worker + install prompt ----
+(function(){
+  // icon: 1x1 png pixel as placeholder (권장: 실제 192/512 아이콘으로 교체)
+  const iconDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axTnqQAAAAASUVORK5CYII=';
+  const manifest = {
+    name: "소가기준 변호사보수 계산기",
+    short_name: "보수 계산기",
+    start_url: ".",
+    display: "standalone",
+    background_color: "#0b1220",
+    theme_color: "#0b1220",
+    icons: [
+      { src: iconDataUrl, sizes: "192x192", type: "image/png" },
+      { src: iconDataUrl, sizes: "512x512", type: "image/png" }
+    ]
+  };
+  try{
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], {type:'application/manifest+json'}));
+    document.head.appendChild(link);
+  }catch(_){/* noop */}
+
+  if ('serviceWorker' in navigator) {
+    const swCode = "self.addEventListener('install',e=>{e.waitUntil(caches.open('fee-calc-v1').then(c=>c.addAll(['./'])));self.skipWaiting();});self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim())});self.addEventListener('fetch',e=>{e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)))})";
+    const swUrl = URL.createObjectURL(new Blob([swCode], {type:'text/javascript'}));
+    navigator.serviceWorker.register(swUrl).catch(()=>{});
+  }
+
+  const installBtn = document.getElementById('installBtn');
+  let deferredPrompt;
+  window.addEventListener('beforeinstallprompt', (e)=>{
+    e.preventDefault();
+    deferredPrompt = e;
+    installBtn.style.display = 'inline-block';
+  });
+  installBtn.addEventListener('click', async ()=>{
+    if(!deferredPrompt) return;
+    const e = deferredPrompt; deferredPrompt = null;
+    await e.prompt();
+  });
+  if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) {
+    installBtn.style.display='none';
+  }
+})();
+</script>
+</body>
+</html>
